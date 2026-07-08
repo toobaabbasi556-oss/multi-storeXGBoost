@@ -1,0 +1,62 @@
+# Central configuration for the sales-forecasting pipeline.
+# Every number that affects results lives here so run.py is fully reproducible.
+
+seed: 42
+
+paths:
+  raw_csv: data/raw/train.csv
+  processed_dir: data/processed
+  reports_dir: reports
+
+data:
+  # Column names as they appear in the Kaggle "Store Item Demand Forecasting" train.csv
+  date_col: date
+  store_col: store
+  item_col: item
+  target_col: sales
+
+features:
+  lags: [1, 7, 14, 28, 365]
+  rolling_windows: [7, 14, 28]        # applied to the shift(1) series
+  # Expanding mean (shifted) is always added.
+
+splits:
+  # Expanding-window time-series CV. Each fold trains on all data strictly BEFORE
+  # `train_end` and validates on (train_end, val_end]. Cutoffs are dates.
+  cv_folds:
+    - {train_end: "2015-12-31", val_end: "2016-06-30"}
+    - {train_end: "2016-06-30", val_end: "2016-12-31"}
+    - {train_end: "2016-12-31", val_end: "2017-06-30"}
+  # Final holdout = last 6 months of 2017. Untouched until the single final scoring.
+  holdout_start: "2017-07-01"
+
+model:
+  xgboost:
+    tree_method: hist
+    enable_categorical: true
+    # Light grid searched over the time-series CV (never touches the holdout).
+    # Kept small on purpose: ~913k rows x several fits must stay reproducible in
+    # minutes, not hours. subsample/colsample fixed at sensible values.
+    param_grid:
+      n_estimators: [400]
+      max_depth: [6, 8]
+      learning_rate: [0.05, 0.1]
+      subsample: [0.8]
+      colsample_bytree: [0.8]
+
+evaluate:
+  # Example (store, item) series drawn for the predicted-vs-actual plots.
+  example_series:
+    - {store: 1, item: 1}
+    - {store: 5, item: 25}
+    - {store: 10, item: 50}
+  shap_sample_size: 5000              # rows sampled for the SHAP summary (speed)
+
+# Synthetic-data fallback used ONLY when the real Kaggle train.csv is absent.
+# Set to false / delete data once you download the real file (see README).
+synthetic:
+  enabled: true
+  n_stores: 10
+  n_items: 50
+  start: "2013-01-01"
+  end: "2017-12-31"
